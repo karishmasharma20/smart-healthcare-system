@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from functools import wraps
 import requests
 from dotenv import load_dotenv
+import anthropic
+import json
 
 load_dotenv()
 
@@ -21,6 +23,17 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-change-this'
 app.config['JWT_EXPIRATION'] = 7 * 24 * 60 * 60  # 7 days
 
 mongo = PyMongo(app)
+
+# ============ LLM CONFIGURATION ============
+
+# Option 1: Using Claude (Anthropic)
+CLAUDE_API_KEY = os.getenv('CLAUDE_API_KEY', '')
+
+# Option 2: Using OpenAI
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+
+# Option 3: Using Hugging Face
+HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', '')
 
 # ============ MIDDLEWARE ============
 
@@ -61,15 +74,12 @@ def token_required(f):
 def signup():
     data = request.json
     
-    # Validation
     if not all(key in data for key in ['name', 'email', 'password']):
         return jsonify({'message': 'Missing required fields'}), 400
     
-    # Check if user exists
     if mongo.db.users.find_one({'email': data['email']}):
         return jsonify({'message': 'Email already registered'}), 409
     
-    # Create user
     user = {
         'name': data['name'],
         'email': data['email'],
@@ -82,7 +92,6 @@ def signup():
     result = mongo.db.users.insert_one(user)
     user_id = result.inserted_id
     
-    # Generate token
     token = jwt.encode({
         'user_id': str(user_id),
         'exp': datetime.utcnow() + timedelta(seconds=app.config['JWT_EXPIRATION'])
@@ -110,7 +119,6 @@ def login():
     if not user or user['password'] != hash_password(data['password']):
         return jsonify({'message': 'Invalid email or password'}), 401
     
-    # Generate token
     token = jwt.encode({
         'user_id': str(user['_id']),
         'exp': datetime.utcnow() + timedelta(seconds=app.config['JWT_EXPIRATION'])
@@ -126,24 +134,246 @@ def login():
         }
     }), 200
 
+# ============ AI ANALYSIS WITH LLM ============
+
+def analyze_with_claude(symptoms):
+    """
+    Uses Claude AI (Anthropic) for medical diagnosis
+    """
+    if not CLAUDE_API_KEY:
+        return None
+    
+    try:
+        client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+        
+        prompt = f"""You are a medical diagnostic AI assistant. Based on the following symptoms, provide:
+1. Top 3-5 most likely conditions (with confidence percentage)
+2. Detailed description of each condition
+3. Recommended actions/treatments
+4. When to seek immediate medical attention
+
+Symptoms: {symptoms}
+
+Format your response as JSON with this structure:
+{{
+    "diagnosis": [
+        {{
+            "name": "Condition Name",
+            "confidence": 85,
+            "description": "Brief description",
+            "recommendations": ["action1", "action2"],
+            "severity": "mild|moderate|severe"
+        }}
+    ],
+    "urgent_warning": "If applicable, emergency warning",
+    "general_notes": "Additional notes"
+}}
+
+IMPORTANT: This is for educational purposes. Always recommend consulting a healthcare professional."""
+        
+        message = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1024,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        
+        response_text = message.content[0].text
+        
+        # Try to parse JSON from response
+        try:
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+            if json_start != -1 and json_end > json_start:
+                json_str = response_text[json_start:json_end]
+                diagnosis = json.loads(json_str)
+                return diagnosis
+        except:
+            pass
+        
+        return None
+    except Exception as e:
+        print(f"Claude API Error: {str(e)}")
+        return None
+
+def analyze_with_openai(symptoms):
+    """
+    Uses OpenAI GPT for medical diagnosis
+    """
+    if not OPENAI_API_KEY:
+        return None
+    
+    try:
+        import openai
+        openai.api_key = OPENAI_API_KEY
+        
+        prompt = f"""You are a medical diagnostic AI. Analyze these symptoms: {symptoms}
+
+Provide 3-5 possible conditions with:
+- Name
+- Confidence (0-100%)
+- Description
+- Recommendations
+- Severity level
+
+Format as JSON."""
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+        
+        response_text = response['choices'][0]['message']['content']
+        
+        try:
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+            if json_start != -1 and json_end > json_start:
+                json_str = response_text[json_start:json_end]
+                diagnosis = json.loads(json_str)
+                return diagnosis
+        except:
+            pass
+        
+        return None
+    except Exception as e:
+        print(f"OpenAI API Error: {str(e)}")
+        return None
+
+def analyze_with_huggingface(symptoms):
+    """
+    Uses Hugging Face models for medical diagnosis
+    """
+    if not HUGGINGFACE_API_KEY:
+        return None
+    
+    try:
+        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
+        
+        prompt = f"""Analyze these medical symptoms and provide diagnosis:
+Symptoms: {symptoms}
+
+Provide top 3 conditions with confidence scores as JSON."""
+        
+        response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result
+        
+        return None
+    except Exception as e:
+        print(f"Hugging Face API Error: {str(e)}")
+        return None
+
+def analyze_with_fallback(symptoms):
+    """
+    Fallback: Simple rule-based diagnosis if LLM fails
+    """
+    disease_db = {
+        'Common Cold': {
+            'keywords': ['cough', 'runny nose', 'sore throat', 'sneezing'],
+            'description': 'A viral infection affecting the upper respiratory tract',
+            'recommendations': ['Get rest', 'Drink fluids', 'Use saline drops', 'Gargle salt water'],
+            'severity': 'mild'
+        },
+        'Flu (Influenza)': {
+            'keywords': ['fever', 'body ache', 'chills', 'cough', 'fatigue'],
+            'description': 'A contagious respiratory illness caused by influenza virus',
+            'recommendations': ['Stay home', 'Rest', 'Monitor temperature', 'Drink fluids'],
+            'severity': 'moderate'
+        },
+        'Migraine': {
+            'keywords': ['headache', 'throbbing', 'nausea', 'light sensitivity'],
+            'description': 'Severe headache often accompanied by other symptoms',
+            'recommendations': ['Rest in dark room', 'Apply cold compress', 'Stay hydrated'],
+            'severity': 'moderate'
+        },
+        'Allergies': {
+            'keywords': ['itching', 'sneezing', 'runny nose', 'watery eyes', 'rash'],
+            'description': 'Immune system reaction to allergens',
+            'recommendations': ['Avoid allergen', 'Use antihistamines', 'Clean environment'],
+            'severity': 'mild'
+        },
+        'Gastroenteritis': {
+            'keywords': ['nausea', 'vomiting', 'stomach pain', 'diarrhea'],
+            'description': 'Infection of the digestive system',
+            'recommendations': ['Stay hydrated', 'Eat bland foods', 'Rest', 'Seek medical help if severe'],
+            'severity': 'moderate'
+        },
+    }
+    
+    symptoms_lower = symptoms.lower()
+    diagnosis = []
+    
+    for disease, info in disease_db.items():
+        matched = sum(1 for keyword in info['keywords'] if keyword in symptoms_lower)
+        
+        if matched > 0:
+            confidence = min((matched / len(info['keywords'])) * 100, 100)
+            
+            diagnosis.append({
+                'name': disease,
+                'description': info['description'],
+                'confidence': int(confidence),
+                'recommendations': info['recommendations'],
+                'severity': info['severity']
+            })
+    
+    diagnosis.sort(key=lambda x: x['confidence'], reverse=True)
+    
+    return {
+        'diagnosis': diagnosis[:3] if diagnosis else [],
+        'urgent_warning': None,
+        'general_notes': 'Using rule-based analysis. For accurate diagnosis, consult a healthcare professional.'
+    }
+
 # ============ ANALYSIS ROUTES ============
 
 @app.route('/api/analysis/analyze', methods=['POST'])
 @token_required
 def analyze_symptoms(user_id):
-    symptoms = request.form.get('symptoms', '')
+    symptoms = request.form.get('symptoms', '').strip()
     
     if not symptoms:
         return jsonify({'message': 'No symptoms provided'}), 400
     
-    # AI Analysis Logic
-    diagnosis = perform_ai_analysis(symptoms)
+    # Try LLM models in order
+    diagnosis_result = None
+    analysis_method = 'rule-based'
+    
+    # Try Claude first
+    if CLAUDE_API_KEY:
+        diagnosis_result = analyze_with_claude(symptoms)
+        if diagnosis_result:
+            analysis_method = 'Claude AI'
+    
+    # Try OpenAI if Claude fails
+    if not diagnosis_result and OPENAI_API_KEY:
+        diagnosis_result = analyze_with_openai(symptoms)
+        if diagnosis_result:
+            analysis_method = 'OpenAI GPT'
+    
+    # Try Hugging Face if others fail
+    if not diagnosis_result and HUGGINGFACE_API_KEY:
+        diagnosis_result = analyze_with_huggingface(symptoms)
+        if diagnosis_result:
+            analysis_method = 'Hugging Face'
+    
+    # Use fallback if all LLMs fail
+    if not diagnosis_result:
+        diagnosis_result = analyze_with_fallback(symptoms)
+        analysis_method = 'Rule-based (Fallback)'
     
     # Save to database
     analysis_record = {
         'user_id': ObjectId(user_id),
         'symptoms': symptoms,
-        'diagnosis': diagnosis,
+        'diagnosis': diagnosis_result.get('diagnosis', []),
+        'analysis_method': analysis_method,
         'timestamp': datetime.now(),
         'file_uploaded': 'file' in request.files
     }
@@ -151,9 +381,12 @@ def analyze_symptoms(user_id):
     result = mongo.db.analyses.insert_one(analysis_record)
     
     return jsonify({
-        'message': 'Analysis completed',
+        'message': f'Analysis completed using {analysis_method}',
         'analysis_id': str(result.inserted_id),
-        'diagnosis': diagnosis
+        'diagnosis': diagnosis_result.get('diagnosis', []),
+        'analysis_method': analysis_method,
+        'urgent_warning': diagnosis_result.get('urgent_warning'),
+        'general_notes': diagnosis_result.get('general_notes')
     }), 200
 
 @app.route('/api/analysis/history', methods=['GET'])
@@ -163,7 +396,6 @@ def get_analysis_history(user_id):
         {'user_id': ObjectId(user_id)}
     ).sort('timestamp', -1).limit(50))
     
-    # Convert ObjectId to string for JSON serialization
     for analysis in analyses:
         analysis['_id'] = str(analysis['_id'])
         analysis['user_id'] = str(analysis['user_id'])
@@ -183,107 +415,6 @@ def delete_analysis(user_id, analysis_id):
     })
     
     return jsonify({'message': 'Analysis deleted'}), 200
-
-# ============ AI ANALYSIS FUNCTION ============
-
-def perform_ai_analysis(symptoms):
-    """
-    Performs AI-based symptom analysis.
-    This is a basic implementation - integrate with actual ML model
-    """
-    
-    # Disease database with symptoms mapping
-    disease_db = {
-        'Common Cold': {
-            'keywords': ['cough', 'runny nose', 'sore throat', 'sneezing'],
-            'description': 'A viral infection affecting the upper respiratory tract',
-            'recommendations': [
-                'Get adequate rest (7-9 hours)',
-                'Drink plenty of fluids (water, herbal tea)',
-                'Use saline nasal drops for congestion',
-                'Gargle with salt water for sore throat',
-                'Consider over-the-counter pain relievers'
-            ]
-        },
-        'Flu (Influenza)': {
-            'keywords': ['fever', 'body ache', 'chills', 'cough', 'fatigue'],
-            'description': 'A contagious respiratory illness caused by influenza virus',
-            'recommendations': [
-                'Stay home and avoid contact with others',
-                'Rest and drink plenty of fluids',
-                'Monitor temperature regularly',
-                'Use fever reducers if needed',
-                'Seek medical attention if symptoms worsen'
-            ]
-        },
-        'Allergies': {
-            'keywords': ['itching', 'sneezing', 'runny nose', 'watery eyes', 'rash'],
-            'description': 'Immune system reaction to allergens',
-            'recommendations': [
-                'Identify and avoid allergen sources',
-                'Use antihistamines as needed',
-                'Maintain a clean, dust-free environment',
-                'Take warm showers to relieve congestion',
-                'Consider allergy testing'
-            ]
-        },
-        'Migraine': {
-            'keywords': ['headache', 'throbbing', 'nausea', 'light sensitivity', 'vomiting'],
-            'description': 'Severe headache often accompanied by other symptoms',
-            'recommendations': [
-                'Rest in a dark, quiet room',
-                'Apply cold compress to forehead',
-                'Stay hydrated',
-                'Avoid caffeine and processed foods',
-                'Consider prescription medication if severe'
-            ]
-        },
-        'Gastrointestinal Infection': {
-            'keywords': ['nausea', 'vomiting', 'stomach pain', 'diarrhea', 'loss of appetite'],
-            'description': 'Infection of the digestive system',
-            'recommendations': [
-                'Stay hydrated with electrolyte solutions',
-                'Eat bland, easy-to-digest foods',
-                'Avoid dairy and fatty foods',
-                'Rest as much as possible',
-                'Seek medical attention if symptoms persist'
-            ]
-        },
-        'Skin Infection': {
-            'keywords': ['rash', 'itching', 'redness', 'swelling', 'pain'],
-            'description': 'Bacterial or fungal skin infection',
-            'recommendations': [
-                'Keep the affected area clean and dry',
-                'Apply antiseptic creams',
-                'Avoid scratching to prevent spreading',
-                'Wear loose, breathable clothing',
-                'See a dermatologist if severe or spreading'
-            ]
-        }
-    }
-    
-    symptoms_lower = symptoms.lower()
-    diagnosis = []
-    
-    # Calculate probability for each disease
-    for disease, info in disease_db.items():
-        matched_keywords = sum(1 for keyword in info['keywords'] if keyword in symptoms_lower)
-        
-        if matched_keywords > 0:
-            probability = min(matched_keywords / len(info['keywords']), 1.0)
-            
-            diagnosis.append({
-                'name': disease,
-                'description': info['description'],
-                'confidence': probability,
-                'recommendations': info['recommendations']
-            })
-    
-    # Sort by confidence
-    diagnosis.sort(key=lambda x: x['confidence'], reverse=True)
-    
-    # Return top 3 diagnoses
-    return diagnosis[:3]
 
 # ============ USER ROUTES ============
 
@@ -322,7 +453,25 @@ def update_user_profile(user_id):
     
     return jsonify({'message': 'Profile updated successfully'}), 200
 
-# ============ HEALTH CHECK ============
+# ============ SYSTEM STATUS ============
+
+@app.route('/api/system/status', methods=['GET'])
+def system_status():
+    llm_available = []
+    
+    if CLAUDE_API_KEY:
+        llm_available.append('Claude AI')
+    if OPENAI_API_KEY:
+        llm_available.append('OpenAI GPT')
+    if HUGGINGFACE_API_KEY:
+        llm_available.append('Hugging Face')
+    
+    return jsonify({
+        'status': 'running',
+        'message': 'MedAI Backend is active',
+        'llm_models': llm_available if llm_available else ['Rule-based (Fallback)'],
+        'timestamp': datetime.now().isoformat()
+    }), 200
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
