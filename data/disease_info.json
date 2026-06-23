@@ -1,0 +1,23 @@
+{
+  "Fungal infection": {
+    "description": "A fungal infection affects skin, nails or tissues.",
+    "severity": "Low",
+    "doctor_type": "Dermatologist",
+    "precautions": [
+      "Keep skin clean and dry",
+      "Avoid sharing towels",
+      "Use prescribed antifungal medication"
+    ]
+  },
+
+  "Acne": {
+    "description": "A skin condition causing pimples and inflammation.",
+    "severity": "Low",
+    "doctor_type": "Dermatologist",
+    "precautions": [
+      "Wash face regularly",
+      "Avoid oily cosmetics",
+      "Stay hydrated"
+    ]
+  }
+}

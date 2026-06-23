@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MedAI — Diagnostic System</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+
+<div class="app">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        </div>
+        <div>
+          <div class="brand-name">MedAI</div>
+          <div class="brand-sub">Diagnostic System</div>
+        </div>
+      </div>
+      <button class="new-chat-btn" onclick="newChat()">
+        <svg viewBox="0 0 24 24">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New Analysis
+      </button>
+    </div>
+
+    <div class="sidebar-label">Recent Sessions</div>
+
+    <div class="history-list" id="historyList">
+      <div class="history-empty" id="historyEmpty">
+        <svg viewBox="0 0 24 24">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        No sessions yet.<br>Start your first analysis.
+      </div>
+    </div>
+
+    <div class="sidebar-foot">
+      <div class="status-pill">
+        <div class="status-dot"></div>
+        Model active · localhost:8000
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── MAIN PANEL ── -->
+  <main class="main">
+
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="mobile-menu-btn" onclick="openSidebar()">
+          <svg viewBox="0 0 24 24">
+            <line x1="3"  y1="6"  x2="21" y2="6"/>
+            <line x1="3"  y1="12" x2="21" y2="12"/>
+            <line x1="3"  y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <div class="topbar-eyebrow">AI-Powered</div>
+      </div>
+      <div class="topbar-title" id="sessionTitle">Symptom Analysis</div>
+      <div class="topbar-desc">Type symptoms, upload an image or file, and get an instant diagnosis.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Input Zone -->
+    <div class="input-zone">
+      <div class="input-row">
+        <div class="input-main">
+          <label class="input-label" for="symptoms">Describe symptoms</label>
+          <input
+            class="symptom-input"
+            type="text"
+            id="symptoms"
+            placeholder="e.g. fever, cough, skin rash…"
+            autocomplete="off"
+          >
+        </div>
+        
+        <div class="action-btns">
+          <button class="voice-btn" onclick="startVoice()">
+        🎤 Speak
+          </button>
+          <!-- Image upload -->
+          <div class="icon-btn" title="Upload image">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="3" width="18" height="18" rx="3"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <input type="file" id="imageFile" accept="image/*" onchange="handleFile(event,'image')">
+          </div>
+          <!-- File upload -->
+          <div class="icon-btn" title="Upload file (PDF, report)">
+            <svg viewBox="0 0 24 24">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <input type="file" id="docFile" accept=".pdf,.txt,.doc,.docx" onchange="handleFile(event,'doc')">
+          </div>
+          <button class="run-btn" id="runBtn" onclick="runAnalysis()">Analyze</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Chips -->
+    <div class="chips-row">
+      <div class="chip" onclick="addSymptom('fever')">Fever</div>
+      <div class="chip" onclick="addSymptom('cough')">Cough</div>
+      <div class="chip" onclick="addSymptom('headache')">Headache</div>
+      <div class="chip" onclick="addSymptom('fatigue')">Fatigue</div>
+      <div class="chip" onclick="addSymptom('nausea')">Nausea</div>
+      <div class="chip" onclick="addSymptom('skin_rash')">Skin Rash</div>
+      <div class="chip" onclick="addSymptom('body_ache')">Body Ache</div>
+      <div class="chip" onclick="addSymptom('throat_pain')">Throat Pain</div>
+    </div>
+
+    <!-- Result Stream -->
+    <div class="result-stream" id="resultStream">
+      <div class="stream-empty" id="streamEmpty">
+        <div class="stream-empty-icon">
+          <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        </div>
+        <strong>No analysis yet</strong>
+        <p>Enter your symptoms above, upload an image<br>or medical file, then click Analyze.</p>
+      </div>
+    </div>
+
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
