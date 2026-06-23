@@ -1,446 +1,433 @@
-// ── STATE ──
-let sessions    = JSON.parse(sessionStorage.getItem('medai_sessions') || '[]');
-let activeId    = null;
-let pendingFile = null; // { type, name, dataUrl? }
+// API Configuration
+const API_URL = 'http://localhost:5000/api';
 
-// ── INIT ──
-renderHistory();
+// User State
+let currentUser = null;
+let analysisHistory = [];
+let selectedFile = null;
 
-// ── SIDEBAR (MOBILE) ──
-function openSidebar() {
-  document.getElementById('sidebar').classList.add('open');
-  document.getElementById('overlay').classList.add('show');
-}
-function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('overlay').classList.remove('show');
-}
-
-// ── SYMPTOM CHIPS ──
-function addSymptom(s) {
-  const inp = document.getElementById('symptoms');
-  if (inp.value.includes(s)) return;
-  inp.value = inp.value.trim() ? inp.value.trim() + ', ' + s : s;
-  inp.focus();
-}
-
-// ── FILE HANDLER ──
-function handleFile(e, type) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    pendingFile = {
-      type,
-      name: file.name,
-      dataUrl: type === 'image' ? ev.target.result : null
-    };
-    // Highlight the icon button
-    const btn = type === 'image'
-      ? document.getElementById('imageFile').closest('.icon-btn')
-      : document.getElementById('docFile').closest('.icon-btn');
-    btn.style.borderColor = 'var(--blue)';
-    btn.style.background  = 'var(--blue-light)';
-    btn.querySelector('svg').style.stroke = 'var(--blue)';
-  };
-  if (type === 'image') reader.readAsDataURL(file);
-  else reader.readAsText(file);
-}
-
-// ── NEW CHAT ──
-function newChat() {
-  activeId = null;
-  document.getElementById('symptoms').value = '';
-  document.getElementById('sessionTitle').textContent = 'Symptom Analysis';
-  clearStream();
-  pendingFile = null;
-  resetFileButtons();
-  closeSidebar();
-}
-
-function clearStream() {
-  document.getElementById('resultStream').innerHTML = `
-    <div class="stream-empty" id="streamEmpty">
-      <div class="stream-empty-icon">
-        <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      </div>
-      <strong>No analysis yet</strong>
-      <p>Enter your symptoms above, upload an image<br>or medical file, then click Analyze.</p>
-    </div>`;
-}
-
-function resetFileButtons() {
-  ['imageFile', 'docFile'].forEach(id => {
-    const btn = document.getElementById(id).closest('.icon-btn');
-    btn.style.borderColor = '';
-    btn.style.background  = '';
-    btn.querySelector('svg').style.stroke = '';
-    document.getElementById(id).value = '';
-  });
-}
-
-// ── LOAD SESSION ──
-function loadSession(id) {
-  const sess = sessions.find(s => s.id === id);
-  if (!sess) return;
-  activeId = id;
-  document.getElementById('sessionTitle').textContent = sess.title;
-  const stream = document.getElementById('resultStream');
-  stream.innerHTML = '';
-  sess.messages.forEach(m => stream.insertAdjacentHTML('beforeend', renderMsg(m)));
-  stream.scrollTop = stream.scrollHeight;
-  renderHistory();
-  closeSidebar();
-}
-
-// ── DELETE SESSION ──
-function deleteSession(e, id) {
-  e.stopPropagation();
-  sessions = sessions.filter(s => s.id !== id);
-  saveToStorage();
-  if (activeId === id) newChat();
-  renderHistory();
-}
-
-// ── RENDER HISTORY ──
-function renderHistory() {
-  const list = document.getElementById('historyList');
-  if (sessions.length === 0) {
-    list.innerHTML = `
-      <div class="history-empty" id="historyEmpty">
-        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        No sessions yet.<br>Start your first analysis.
-      </div>`;
-    return;
-  }
-  list.innerHTML = sessions.slice().reverse().map(s => `
-    <div class="history-item ${s.id === activeId ? 'active' : ''}" onclick="loadSession('${s.id}')">
-      <div class="history-item-title">${esc(s.title)}</div>
-      <div class="history-item-meta">
-        <span class="history-item-dot"></span>
-        ${s.time}
-      </div>
-      <button class="history-item-delete" onclick="deleteSession(event,'${s.id}')" title="Delete">
-        <svg viewBox="0 0 24 24">
-          <polyline points="3 6 5 6 21 6"/>
-          <path d="M19 6l-1 14H6L5 6"/>
-          <path d="M10 11v6"/><path d="M14 11v6"/>
-          <path d="M9 6V4h6v2"/>
-        </svg>
-      </button>
-    </div>`).join('');
-}
-
-// ── RENDER MESSAGE ──
-function renderMsg(m) {
-  if (m.role === 'user') {
-    let attachHtml = '';
-    if (m.image) attachHtml += `<div class="attach-preview"><img src="${m.image}" alt="uploaded"></div>`;
-    if (m.file)  attachHtml += `
-      <div class="file-attach">
-        <svg viewBox="0 0 24 24">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
-        </svg>
-        ${esc(m.file)}
-      </div>`;
-    return `
-      <div class="msg msg-user">
-        <div>
-          <div class="bubble-user">${esc(m.text)}${attachHtml}</div>
-          <div class="msg-time">${m.time}</div>
-        </div>
-      </div>`;
-  }
-
-  if (m.role === 'ai') {
-    return `
-      <div class="msg msg-ai">
-        <div class="bubble-ai">
-          <div class="result-card">
-            <div class="result-card-top">
-              <div class="result-tag">
-                <span class="result-tag-dot"></span>Condition identified
-              </div>
-              <div class="result-disease">${esc(m.disease)}</div>
-            </div>
-            <div class="result-card-bot">
-
-              <div class="result-meta-lbl">Confidence</div>
-              <div class="result-meta-val">
-                ${m.confidence}%
-              </div>
-
-              <div class="result-meta-lbl">Symptoms analyzed</div>
-              <div class="result-meta-val">
-                ${esc(m.symptoms)}
-              </div>
-
-              <div class="result-meta-lbl">Description</div>
-              <div class="result-meta-val">
-                ${esc(m.description)}
-              </div>
-
-              <div class="result-meta-lbl">Severity</div>
-            <div class="result-meta-val">
-               ${esc(m.severity)}
-            </div>
-
-            <div class="result-meta-lbl">Recommended Doctor</div>
-            <div class="result-meta-val">
-              ${esc(m.doctor_type)}
-          </div>
-
-              <div class="result-meta-lbl">
-                Precautions
-              </div>
-
-              <ul class="precaution-list">
-                ${m.precautions
-                  .map(p => `<li>${esc(p)}</li>`)
-                  .join("")}
-              </ul>
-
-              <div class="result-disclaimer">
-                AI result for informational use only.
-                Consult a licensed physician.
-              </div>
-                  <button class="pdf-btn" onclick="downloadReport()">
-                      📄 Download Report
-                  </button>
-            </div>
-          </div>
-
-          <div class="msg-time">${m.time}</div>
-        </div>
-      </div>`;
-}
-
-  if (m.role === 'error') {
-    return `
-      <div class="msg msg-ai">
-        <div class="bubble-ai">
-          <div class="error-bubble">
-            <div class="error-title">${esc(m.title)}</div>
-            <div class="error-msg">${esc(m.text)}</div>
-          </div>
-          <div class="msg-time">${m.time}</div>
-        </div>
-      </div>`;
-  }
-  return '';
-}
-
-// ── SESSION STORAGE ──
-function saveToStorage() {
-  sessionStorage.setItem('medai_sessions', JSON.stringify(sessions));
-}
-
-// ── TIME ──
-function now() {
-  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-// ── MAIN ANALYZE ──
-async function runAnalysis() {
-  const inp    = document.getElementById('symptoms');
-  const stream = document.getElementById('resultStream');
-  const btn    = document.getElementById('runBtn');
-  const raw    = inp.value.trim();
-
-  if (!raw && !pendingFile) {
-    appendError(stream, 'Nothing to analyze', 'Enter symptoms or upload an image/file first.');
-    return;
-  }
-
-  // Remove empty state
-  document.getElementById('streamEmpty')?.remove();
-
-  // User message
-  const userMsg = {
-    role:  'user',
-    text:  raw || '(file/image only)',
-    image: pendingFile?.type === 'image' ? pendingFile.dataUrl : null,
-    file:  pendingFile?.type === 'doc'   ? pendingFile.name   : null,
-    time:  now()
-  };
-  stream.insertAdjacentHTML('beforeend', renderMsg(userMsg));
-  stream.scrollTop = stream.scrollHeight;
-
-  // Loading bubble
-  const loadId = 'load-' + Date.now();
-  stream.insertAdjacentHTML('beforeend', `
-    <div class="msg msg-ai" id="${loadId}">
-      <div class="bubble-ai">
-        <div class="loading-bubble">
-          <div class="ios-spinner"></div>
-          <p>Analyzing symptoms…</p>
-        </div>
-      </div>
-    </div>`);
-  stream.scrollTop = stream.scrollHeight;
-  btn.disabled = true;
-
-  // Session setup
-  if (!activeId) {
-    activeId = 'sess-' + Date.now();
-    const title = raw
-      ? raw.split(',')[0].trim().replace(/^\w/, c => c.toUpperCase())
-      : (pendingFile?.name || 'New session');
-    sessions.push({ id: activeId, title, time: now(), messages: [] });
-    document.getElementById('sessionTitle').textContent = title;
-  }
-  const sess = sessions.find(s => s.id === activeId);
-  sess.messages.push(userMsg);
-
-  try {
-    // const symptoms = raw
-    //   ? raw.split(/[,;]/).map(s => s.trim().toLowerCase()).filter(Boolean)
-    //   : ['image_analysis'];
-
-    // const res = await fetch('http://127.0.0.1:8000/predict', {
-    //   method:  'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body:    JSON.stringify({ symptoms })
-    // });
-    const res = await fetch('http://127.0.0.1:8000/predict-text', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-    text: raw
-    })
-  });
-
-    if (!res.ok) throw new Error('server');
-    const data = await res.json();
-    if (!data.predicted_disease) throw new Error('empty');
-
-    document.getElementById(loadId)?.remove();
-
-  //   const aiMsg = {
-  //     role: 'ai',
-  //     disease: data.predicted_disease,
-  //     confidence: data.confidence,
-  //     description: data.description,
-  //     precautions: data.precautions,
-  //     symptoms: symptoms.join(', '),
-  //     time: now()
-  // };
-   const aiMsg = {
-   role: 'ai',
-   disease: data.predicted_disease,
-    confidence: data.confidence,
-    description: data.description,
-    severity: data.severity,
-    doctor_type: data.doctor_type,
-    precautions: data.precautions,
-    symptoms: data.detected_symptoms.join(', '),
-    time: now()
-  };    
-stream.insertAdjacentHTML('beforeend', renderMsg(aiMsg));
-    stream.scrollTop = stream.scrollHeight;
-    sess.messages.push(aiMsg);
-
-    const history = JSON.parse(
-  localStorage.getItem("predictionHistory") || "[]"
-);
-
-history.unshift({
-  disease: data.predicted_disease,
-  confidence: data.confidence,
-  symptoms: data.detected_symptoms.join(", "),
-  time: now()
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    setupEventListeners();
+    checkAuthentication();
 });
 
-localStorage.setItem(
-  "predictionHistory",
-  JSON.stringify(history)
-);
-
-  } catch (err) {
-    document.getElementById(loadId)?.remove();
-    const errMsg = err instanceof TypeError
-      ? 'Cannot reach backend. Ensure FastAPI is running on localhost:8000.'
-      : 'Analysis failed. Please try again.';
-    const errObj = { role: 'error', title: 'Analysis failed', text: errMsg, time: now() };
-    stream.insertAdjacentHTML('beforeend', renderMsg(errObj));
-    stream.scrollTop = stream.scrollHeight;
-    sess.messages.push(errObj);
-
-  } finally {
-    btn.disabled = false;
-    saveToStorage();
-    renderHistory();
-    inp.value   = '';
-    pendingFile = null;
-    resetFileButtons();
-  }
+// Setup Event Listeners
+function setupEventListeners() {
+    // Auth Forms
+    document.getElementById('loginForm').addEventListener('submit', handleLogin);
+    document.getElementById('signupForm').addEventListener('submit', handleSignup);
+    
+    // File Upload
+    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+    
+    // Voice Input
+    document.getElementById('voiceBtn').addEventListener('click', startVoiceInput);
 }
 
-function appendError(stream, title, text) {
-  document.getElementById('streamEmpty')?.remove();
-  stream.insertAdjacentHTML('beforeend', renderMsg({ role: 'error', title, text, time: now() }));
-  stream.scrollTop = stream.scrollHeight;
+// ============ AUTHENTICATION ============
+
+function checkAuthentication() {
+    const token = localStorage.getItem('token');
+    const user = localStorage.getItem('user');
+    
+    if (token && user) {
+        currentUser = JSON.parse(user);
+        showMainContent();
+    }
 }
 
-// ── ESCAPE HTML ──
-function esc(t = '') {
-  return String(t).replace(/[&<>"']/g, m => (
-    { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'": '&#039;' }[m]
-  ));
+function switchTab(tab) {
+    document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    
+    if (tab === 'login') {
+        document.getElementById('loginForm').classList.add('active');
+        document.querySelector('[onclick="switchTab(\'login\')"]').classList.add('active');
+    } else {
+        document.getElementById('signupForm').classList.add('active');
+        document.querySelector('[onclick="switchTab(\'signup\')"]').classList.add('active');
+    }
 }
 
-// ── ENTER KEY ──
-document.getElementById('symptoms').addEventListener('keypress', e => {
-  if (e.key === 'Enter') runAnalysis();
-});
+async function handleLogin(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            currentUser = data.user;
+            showMainContent();
+        } else {
+            document.getElementById('loginError').textContent = data.message || 'Login failed';
+        }
+    } catch (error) {
+        document.getElementById('loginError').textContent = 'Connection error. Make sure backend is running.';
+    }
+}
+
+async function handleSignup(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('signupName').value;
+    const email = document.getElementById('signupEmail').value;
+    const password = document.getElementById('signupPassword').value;
+    const phone = document.getElementById('signupPhone').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/auth/signup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password, phone })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            currentUser = data.user;
+            showMainContent();
+        } else {
+            document.getElementById('signupError').textContent = data.message || 'Signup failed';
+        }
+    } catch (error) {
+        document.getElementById('signupError').textContent = 'Connection error. Make sure backend is running.';
+    }
+}
+
+function logout() {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    currentUser = null;
+    analysisHistory = [];
+    document.getElementById('authModal').classList.add('active');
+    document.getElementById('mainContent').style.display = 'none';
+    document.getElementById('loginForm').reset();
+    document.getElementById('signupForm').reset();
+}
+
+// ============ NAVIGATION ============
+
+function showMainContent() {
+    document.getElementById('authModal').classList.remove('active');
+    document.getElementById('mainContent').style.display = 'block';
+    document.getElementById('userName').textContent = currentUser.name;
+    loadAnalysisHistory();
+    navigateTo('dashboard');
+}
+
+function navigateTo(page) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    
+    switch(page) {
+        case 'dashboard':
+            document.getElementById('dashboardPage').classList.add('active');
+            updateDashboardStats();
+            break;
+        case 'analysis':
+            document.getElementById('analysisPage').classList.add('active');
+            document.getElementById('resultsSection').style.display = 'none';
+            newAnalysis();
+            break;
+        case 'history':
+            document.getElementById('historyPage').classList.add('active');
+            loadAnalysisHistory();
+            break;
+    }
+}
+
+// ============ DASHBOARD ============
+
+function updateDashboardStats() {
+    document.getElementById('totalAnalyses').textContent = analysisHistory.length;
+    const recentCount = analysisHistory.filter(a => {
+        const date = new Date(a.timestamp);
+        const today = new Date();
+        return date.toDateString() === today.toDateString();
+    }).length;
+    document.getElementById('recentSessions').textContent = recentCount;
+}
+
+// ============ ANALYSIS ============
+
+function newAnalysis() {
+    document.getElementById('symptomText').value = '';
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('fileInput').value = '';
+    document.getElementById('fileName').textContent = '';
+    selectedFile = null;
+    document.querySelectorAll('.chip').forEach(chip => chip.classList.remove('selected'));
+}
+
+function addSymptom(element) {
+    element.classList.toggle('selected');
+    
+    if (element.classList.contains('selected')) {
+        document.getElementById('symptomText').value += element.textContent + ', ';
+    }
+}
+
+function handleFileUpload(e) {
+    selectedFile = e.target.files[0];
+    if (selectedFile) {
+        document.getElementById('fileName').textContent = '✓ ' + selectedFile.name;
+    }
+}
+
+async function analyzeSymptoms() {
+    const symptoms = document.getElementById('symptomText').value.trim();
+    
+    if (!symptoms) {
+        alert('Please enter or select symptoms');
+        return;
+    }
+    
+    document.getElementById('resultsSection').style.display = 'block';
+    document.getElementById('resultCard').innerHTML = '<div class="loading"><div class="spinner"></div><p>AI is analyzing your symptoms...</p></div>';
+    
+    try {
+        const formData = new FormData();
+        formData.append('symptoms', symptoms);
+        formData.append('userId', currentUser.id);
+        
+        if (selectedFile) {
+            formData.append('file', selectedFile);
+        }
+        
+        const response = await fetch(`${API_URL}/analysis/analyze`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            displayResults(data);
+            analysisHistory.unshift({
+                id: Date.now(),
+                symptoms: symptoms,
+                results: data.diagnosis,
+                timestamp: new Date().toISOString()
+            });
+            updateDashboardStats();
+        } else {
+            document.getElementById('resultCard').innerHTML = 
+                '<div class="error"><p>Error: ' + data.message + '</p></div>';
+        }
+    } catch (error) {
+        document.getElementById('resultCard').innerHTML = 
+            '<div class="error"><p>Connection error. Make sure backend is running on localhost:5000</p></div>';
+    }
+}
+
+function displayResults(data) {
+    let html = '<div class="result-content">';
+    
+    if (data.diagnosis && data.diagnosis.length > 0) {
+        data.diagnosis.forEach((diagnosis, index) => {
+            const confidence = (diagnosis.confidence * 100).toFixed(1);
+            html += `
+                <div class="result-item">
+                    <h3>${index + 1}. ${diagnosis.name}</h3>
+                    <p>${diagnosis.description}</p>
+                    <div class="probability">Probability: ${confidence}%</div>
+                    <p style="margin-top: 10px; color: #666;"><strong>Recommendations:</strong></p>
+                    <ul style="margin-left: 20px; color: #666;">
+                        ${diagnosis.recommendations.map(r => `<li>${r}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        });
+    } else {
+        html += '<p>No specific diagnosis could be determined. Please consult a healthcare professional.</p>';
+    }
+    
+    html += `
+        <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #ffc107;">
+            <strong>⚠️ Important Disclaimer:</strong>
+            <p style="font-size: 13px; margin-top: 5px;">
+                This analysis is for informational purposes only and should not replace professional medical advice. 
+                Always consult with a qualified healthcare professional for diagnosis and treatment.
+            </p>
+        </div>
+    `;
+    
+    html += '</div>';
+    document.getElementById('resultCard').innerHTML = html;
+}
+
+// ============ VOICE INPUT ============
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let isListening = false;
+
+function startVoiceInput() {
+    if (!SpeechRecognition) {
+        alert('Speech Recognition not supported in this browser');
+        return;
+    }
+    
+    if (!recognition) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        
+        recognition.onstart = () => {
+            isListening = true;
+            document.getElementById('voiceBtn').style.background = '#e74c3c';
+            document.getElementById('voiceStatus').textContent = '🎙️ Listening...';
+        };
+        
+        recognition.onresult = (event) => {
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                transcript += event.results[i][0].transcript;
+            }
+            document.getElementById('symptomText').value += transcript + ' ';
+        };
+        
+        recognition.onend = () => {
+            isListening = false;
+            document.getElementById('voiceBtn').style.background = 'var(--secondary-color)';
+            document.getElementById('voiceStatus').textContent = '✓ Done';
+        };
+    }
+    
+    if (isListening) {
+        recognition.stop();
+    } else {
+        recognition.start();
+    }
+}
+
+// ============ HISTORY ============
+
+async function loadAnalysisHistory() {
+    try {
+        const response = await fetch(`${API_URL}/analysis/history`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            analysisHistory = data.analyses;
+            displayAnalysisHistory();
+        }
+    } catch (error) {
+        console.log('Using local history');
+        displayAnalysisHistory();
+    }
+}
+
+function displayAnalysisHistory() {
+    const historyList = document.getElementById('historyList');
+    
+    if (analysisHistory.length === 0) {
+        historyList.innerHTML = '<p class="empty-state">No analysis history yet. Start your first analysis!</p>';
+        return;
+    }
+    
+    historyList.innerHTML = analysisHistory.map((analysis, index) => `
+        <div class="history-item">
+            <div class="history-item-info">
+                <h3>Analysis #${analysisHistory.length - index}</h3>
+                <p>${new Date(analysis.timestamp).toLocaleString()}</p>
+                <p>Symptoms: ${analysis.symptoms.substring(0, 50)}...</p>
+            </div>
+            <div class="history-item-actions">
+                <button onclick="viewAnalysis(${index})">View</button>
+                <button onclick="deleteAnalysis(${index})" style="background: #e74c3c;">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function viewAnalysis(index) {
+    const analysis = analysisHistory[index];
+    navigateTo('analysis');
+    document.getElementById('symptomText').value = analysis.symptoms;
+    document.getElementById('resultsSection').style.display = 'block';
+    displayResults(analysis.results);
+}
+
+function deleteAnalysis(index) {
+    if (confirm('Delete this analysis?')) {
+        analysisHistory.splice(index, 1);
+        displayAnalysisHistory();
+        updateDashboardStats();
+    }
+}
+
+// ============ REPORT GENERATION ============
+
 function downloadReport() {
+    const symptomText = document.getElementById('symptomText').value;
+    const resultCard = document.getElementById('resultCard');
+    
+    let content = `MEDAI HEALTHCARE DIAGNOSTIC REPORT
+=====================================
 
-  const { jsPDF } = window.jspdf;
+Patient Name: ${currentUser.name}
+Date: ${new Date().toLocaleString()}
 
-  const doc = new jsPDF();
+SYMPTOMS:
+${symptomText}
 
-  const disease =
-    document.querySelector(".result-disease")?.innerText || "";
+ANALYSIS RESULTS:
+${resultCard.innerText}
 
-  doc.setFontSize(18);
-  doc.text("Smart Healthcare AI Report", 20, 20);
+IMPORTANT DISCLAIMER:
+This analysis is for informational purposes only and should not replace 
+professional medical advice. Always consult with a qualified healthcare professional.
 
-  doc.setFontSize(12);
-  doc.text("Disease: " + disease, 20, 40);
-
-  doc.save("health-report.pdf");
+Generated by MedAI Diagnostic System`;
+    
+    const element = document.createElement('a');
+    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
+    element.setAttribute('download', `MedAI_Report_${Date.now()}.txt`);
+    element.style.display = 'none';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
 }
-function startVoice() {
 
-  const SpeechRecognition =
-    window.SpeechRecognition ||
-    window.webkitSpeechRecognition;
-
-  if (!SpeechRecognition) {
-    alert("Speech Recognition not supported");
-    return;
-  }
-
-  const recognition =
-    new SpeechRecognition();
-
-  recognition.lang = "en-US";
-
-  recognition.start();
-
-  recognition.onresult = function(event) {
-
-    const text =
-      event.results[0][0].transcript;
-
-    document.getElementById("symptoms").value =
-      text;
-  };
-
-  recognition.onerror = function(event) {
-  console.log("Voice Error:", event.error);
-  alert("Voice Error: " + event.error);
-};
-  
+function printReport() {
+    const printContent = `
+        <h2>MEDAI HEALTHCARE DIAGNOSTIC REPORT</h2>
+        <p><strong>Patient:</strong> ${currentUser.name}</p>
+        <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+        <h3>Symptoms:</h3>
+        <p>${document.getElementById('symptomText').value}</p>
+        <h3>Analysis Results:</h3>
+        ${document.getElementById('resultCard').innerHTML}
+    `;
+    
+    const printWindow = window.open('', '', 'height=500,width=800');
+    printWindow.document.write('<html><head><title>MedAI Report</title>');
+    printWindow.document.write('<link rel="stylesheet" href="style.css">');
+    printWindow.document.write('</head><body>');
+    printWindow.document.write(printContent);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.print();
 }
