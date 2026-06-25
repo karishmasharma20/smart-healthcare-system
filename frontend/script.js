@@ -1,5 +1,5 @@
 // API Configuration
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://localhost:8000/api';
 
 // User State
 let currentUser = null;
@@ -286,8 +286,11 @@ function startVoiceInput() {
     
     if (!recognition) {
         recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
+        
+        // Settings: Isko true rakhein taaki aap lamba bol sakein
+        recognition.continuous = true; 
+        // Interim ko true hi rakhenge taaki live type hota dikhe, par handle dhang se karenge
+        recognition.interimResults = true; 
         
         recognition.onstart = () => {
             isListening = true;
@@ -296,11 +299,23 @@ function startVoiceInput() {
         };
         
         recognition.onresult = (event) => {
-            let transcript = '';
+            let finalTranscript = '';
+            let interimTranscript = '';
+            
+            // Loop jo final aur temporary words ko alag karega
             for (let i = event.resultIndex; i < event.results.length; i++) {
-                transcript += event.results[i][0].transcript;
+                let transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += transcript + ' ';
+                } else {
+                    interimTranscript += transcript;
+                }
             }
-            document.getElementById('symptomText').value += transcript + ' ';
+            
+            // Agar koi final (pka) result aaya hai, sirf tabhi textarea mein badlaav karein
+            if (finalTranscript !== '') {
+                document.getElementById('symptomText').value += finalTranscript;
+            }
         };
         
         recognition.onend = () => {
@@ -316,7 +331,6 @@ function startVoiceInput() {
         recognition.start();
     }
 }
-
 // ============ HISTORY ============
 
 async function loadAnalysisHistory() {

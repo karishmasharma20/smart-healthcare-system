@@ -137,18 +137,39 @@ def analyze_with_openai(symptoms: str):
 def analyze_with_huggingface(symptoms: str):
     if not HUGGINGFACE_API_KEY:
         return None
-    try:
-        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
-        prompt = f"Analyze these medical symptoms and provide diagnosis:\nSymptoms: {symptoms}\n\nProvide top 3 conditions with confidence scores as JSON."
-        
-        response = requests.post(API_URL, headers=headers, json={"inputs": prompt})
-        if response.status_code == 200:
-            return response.json()
-    except Exception as e:
-        print(f"Hugging Face API Error: {str(e)}")
-    return None
 
+    try:
+        API_URL = "https://router.huggingface.co/hf-inference/models/google/gemma-2-2b-it"
+
+        headers = {
+            "Authorization": f"Bearer {HUGGINGFACE_API_KEY}"
+        }
+
+        prompt = f"""
+    Analyze these symptoms:
+        {symptoms}
+
+        Return:
+        1. Top possible conditions
+        2. Severity
+        3. Recommendations
+        """
+
+        response = requests.post(
+            API_URL,
+            headers=headers,
+            json={"inputs": prompt},
+            timeout=30
+        )
+
+        print("HF Status:", response.status_code)
+        print("HF Response:", response.text[:500])
+
+        return response.json()
+
+    except Exception as e:
+        print(f"Hugging Face API Error: {e}")
+        return None
 def analyze_with_fallback(symptoms: str):
     disease_db = {
         'Common Cold': {
@@ -249,18 +270,28 @@ async def analyze_symptoms(
     diagnosis_result = None
     analysis_method = 'rule-based'
     
+    # 1. Claude AI
     if CLAUDE_API_KEY:
-        diagnosis_result = analyze_with_claude(symptoms)
-        if diagnosis_result: analysis_method = 'Claude AI'
+        res = analyze_with_claude(symptoms)
+        if res and isinstance(res, dict) and 'diagnosis' in res:
+            diagnosis_result = res
+            analysis_method = 'Claude AI'
         
+    # 2. OpenAI GPT
     if not diagnosis_result and OPENAI_API_KEY:
-        diagnosis_result = analyze_with_openai(symptoms)
-        if diagnosis_result: analysis_method = 'OpenAI GPT'
+        res = analyze_with_openai(symptoms)
+        if res and isinstance(res, dict) and 'diagnosis' in res:
+            diagnosis_result = res
+            analysis_method = 'OpenAI GPT'
         
+    # 3. Hugging Face (Sahi parsing ke sath)
     if not diagnosis_result and HUGGINGFACE_API_KEY:
-        diagnosis_result = analyze_with_huggingface(symptoms)
-        if diagnosis_result: analysis_method = 'Hugging Face'
+        res = analyze_with_huggingface(symptoms)
+        # Hugging face text response ko handle karne ke liye fallback par bhej rahe hain
+        # Kyunki Gemma directly structured JSON bina proper formatting ke nahi dega
+        diagnosis_result = None 
         
+    # 4. Fallback (Agar kuch kaam na kare ya format galat ho)
     if not diagnosis_result:
         diagnosis_result = analyze_with_fallback(symptoms)
         analysis_method = 'Rule-based (Fallback)'
@@ -354,4 +385,4 @@ def health_check():
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run("main:app", host='localhost', port=5000, reload=True)
+    uvicorn.run("app:app", host='localhost', port=5000, reload=True)
