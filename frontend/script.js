@@ -1,10 +1,9 @@
 // ============ API Configuration ============
-// Ye check karta hai ki website local chal rahi hai ya GitHub par
 const IS_PRODUCTION = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
-// GitHub par daalne ke baad 'https://your-backend-app.onrender.com' jaisa URL yahan daalein
-const LIVE_BACKEND_URL = 'https://YOUR_LIVE_BACKEND_URL.com'; 
-const LOCAL_BACKEND_URL = 'http://localhost:8000'; // Agar backend 5000 par hai toh ise 5000 kar dein
+// JAB APNA BACKEND RENDER PAR DEPLOY KAR LENGE, TOH USKA LINK YAHAN DALNA
+const LIVE_BACKEND_URL = 'https://medai-backend-production.onrender.com'; 
+const LOCAL_BACKEND_URL = 'http://localhost:8000'; 
 
 const API_URL = `${IS_PRODUCTION ? LIVE_BACKEND_URL : LOCAL_BACKEND_URL}/api`;
 
@@ -21,7 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Setup Event Listeners
 function setupEventListeners() {
-    // Auth Forms
     const loginForm = document.getElementById('loginForm');
     const signupForm = document.getElementById('signupForm');
     const fileInput = document.getElementById('fileInput');
@@ -85,7 +83,7 @@ async function handleLogin(e) {
             if (errorEl) errorEl.textContent = data.message || 'Login failed';
         }
     } catch (error) {
-        if (errorEl) errorEl.textContent = `Connection error. Make sure backend is running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}.`;
+        if (errorEl) errorEl.textContent = `Connection error. Running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}.`;
     }
 }
 
@@ -116,7 +114,7 @@ async function handleSignup(e) {
             if (errorEl) errorEl.textContent = data.message || 'Signup failed';
         }
     } catch (error) {
-        if (errorEl) errorEl.textContent = `Connection error. Make sure backend is running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}.`;
+        if (errorEl) errorEl.textContent = `Connection error. Running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}.`;
     }
 }
 
@@ -186,7 +184,6 @@ function newAnalysis() {
 
 function addSymptom(element) {
     element.classList.toggle('selected');
-    
     if (element.classList.contains('selected')) {
         document.getElementById('symptomText').value += element.textContent + ', ';
     }
@@ -201,7 +198,6 @@ function handleFileUpload(e) {
 
 async function analyzeSymptoms() {
     const symptoms = document.getElementById('symptomText').value.trim();
-    
     if (!symptoms) {
         alert('Please enter or select symptoms');
         return;
@@ -214,7 +210,6 @@ async function analyzeSymptoms() {
         const formData = new FormData();
         formData.append('symptoms', symptoms);
         formData.append('userId', currentUser.id);
-        
         if (selectedFile) {
             formData.append('file', selectedFile);
         }
@@ -228,7 +223,6 @@ async function analyzeSymptoms() {
         });
         
         const data = await response.json();
-        
         if (response.ok) {
             displayResults(data);
             analysisHistory.unshift({
@@ -239,18 +233,15 @@ async function analyzeSymptoms() {
             });
             updateDashboardStats();
         } else {
-            document.getElementById('resultCard').innerHTML = 
-                '<div class="error"><p>Error: ' + data.message + '</p></div>';
+            document.getElementById('resultCard').innerHTML = '<div class="error"><p>Error: ' + data.message + '</p></div>';
         }
     } catch (error) {
-        document.getElementById('resultCard').innerHTML = 
-            `<div class="error"><p>Connection error. Make sure backend is running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}</p></div>`;
+        document.getElementById('resultCard').innerHTML = `<div class="error"><p>Connection error. Backend is down on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}</p></div>`;
     }
 }
 
 function displayResults(data) {
     let html = '<div class="result-content">';
-    
     if (data.diagnosis && data.diagnosis.length > 0) {
         data.diagnosis.forEach((diagnosis, index) => {
             const confidence = (diagnosis.confidence * 100).toFixed(1);
@@ -267,25 +258,19 @@ function displayResults(data) {
             `;
         });
     } else {
-        html += '<p>No specific diagnosis could be determined. Please consult a healthcare professional.</p>';
+        html += '<p>No specific diagnosis could be determined.</p>';
     }
     
     html += `
         <div style="background: #fff3cd; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #ffc107;">
             <strong>⚠️ Important Disclaimer:</strong>
-            <p style="font-size: 13px; margin-top: 5px;">
-                This analysis is for informational purposes only and should not replace professional medical advice. 
-                Always consult with a qualified healthcare professional for diagnosis and treatment.
-            </p>
+            <p style="font-size: 13px; margin-top: 5px;">This analysis is for informational purposes only.</p>
         </div>
-    `;
-    
-    html += '</div>';
+    </div>`;
     document.getElementById('resultCard').innerHTML = html;
 }
 
 // ============ VOICE INPUT ============
-
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let isListening = false;
@@ -295,10 +280,8 @@ function startVoiceInput() {
         alert('Speech Recognition not supported in this browser');
         return;
     }
-    
     if (!recognition) {
         recognition = new SpeechRecognition();
-        
         recognition.continuous = true; 
         recognition.interimResults = true; 
         
@@ -307,54 +290,34 @@ function startVoiceInput() {
             document.getElementById('voiceBtn').style.background = '#e74c3c';
             document.getElementById('voiceStatus').textContent = '🎙️ Listening...';
         };
-        
         recognition.onresult = (event) => {
             let finalTranscript = '';
-            
             for (let i = event.resultIndex; i < event.results.length; i++) {
-                let transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    finalTranscript += transcript + ' ';
-                }
+                if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript + ' ';
             }
-            
-            if (finalTranscript !== '') {
-                document.getElementById('symptomText').value += finalTranscript;
-            }
+            if (finalTranscript !== '') document.getElementById('symptomText').value += finalTranscript;
         };
-        
         recognition.onend = () => {
             isListening = false;
             document.getElementById('voiceBtn').style.background = 'var(--secondary-color, #3498db)';
             document.getElementById('voiceStatus').textContent = '✓ Done';
         };
     }
-    
-    if (isListening) {
-        recognition.stop();
-    } else {
-        recognition.start();
-    }
+    if (isListening) recognition.stop(); else recognition.start();
 }
 
 // ============ HISTORY ============
-
 async function loadAnalysisHistory() {
     try {
         const response = await fetch(`${API_URL}/analysis/history`, {
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
-        
         const data = await response.json();
-        
         if (response.ok) {
             analysisHistory = data.analyses;
             displayAnalysisHistory();
         }
     } catch (error) {
-        console.log('Using local history');
         displayAnalysisHistory();
     }
 }
@@ -362,28 +325,22 @@ async function loadAnalysisHistory() {
 function displayAnalysisHistory() {
     const historyList = document.getElementById('historyList');
     if (!historyList) return;
-    
     if (analysisHistory.length === 0) {
-        historyList.innerHTML = '<p class="empty-state">No analysis history yet. Start your first analysis!</p>';
+        historyList.innerHTML = '<p class="empty-state">No history yet.</p>';
         return;
     }
-    
-    historyList.innerHTML = analysisHistory.map((analysis, index) => {
-        const symptomsSnippet = analysis.symptoms ? analysis.symptoms.substring(0, 50) : 'No symptoms listed';
-        return `
-            <div class="history-item">
-                <div class="history-item-info">
-                    <h3>Analysis #${analysisHistory.length - index}</h3>
-                    <p>${new Date(analysis.timestamp).toLocaleString()}</p>
-                    <p>Symptoms: ${symptomsSnippet}...</p>
-                </div>
-                <div class="history-item-actions">
-                    <button onclick="viewAnalysis(${index})">View</button>
-                    <button onclick="deleteAnalysis(${index})" style="background: #e74c3c;">Delete</button>
-                </div>
+    historyList.innerHTML = analysisHistory.map((analysis, index) => `
+        <div class="history-item">
+            <div class="history-item-info">
+                <h3>Analysis #${analysisHistory.length - index}</h3>
+                <p>${new Date(analysis.timestamp).toLocaleString()}</p>
             </div>
-        `;
-    }).join('');
+            <div class="history-item-actions">
+                <button onclick="viewAnalysis(${index})">View</button>
+                <button onclick="deleteAnalysis(${index})" style="background: #e74c3c;">Delete</button>
+            </div>
+        </div>
+    `).join('');
 }
 
 function viewAnalysis(index) {
@@ -403,29 +360,9 @@ function deleteAnalysis(index) {
 }
 
 // ============ REPORT GENERATION ============
-
 function downloadReport() {
     const symptomText = document.getElementById('symptomText').value;
-    const resultCard = document.getElementById('resultCard');
-    
-    let content = `MEDAI HEALTHCARE DIAGNOSTIC REPORT
-=====================================
-
-Patient Name: ${currentUser ? currentUser.name : 'Guest'}
-Date: ${new Date().toLocaleString()}
-
-SYMPTOMS:
-${symptomText}
-
-ANALYSIS RESULTS:
-${resultCard ? resultCard.innerText : 'No results found'}
-
-IMPORTANT DISCLAIMER:
-This analysis is for informational purposes only and should not replace 
-professional medical advice. Always consult with a qualified healthcare professional.
-
-Generated by MedAI Diagnostic System`;
-    
+    let content = `MEDAI REPORT\nPatient: ${currentUser ? currentUser.name : 'Guest'}\nSymptoms: ${symptomText}`;
     const element = document.createElement('a');
     element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
     element.setAttribute('download', `MedAI_Report_${Date.now()}.txt`);
@@ -436,23 +373,10 @@ Generated by MedAI Diagnostic System`;
 }
 
 function printReport() {
-    const printContent = `
-        <h2>MEDAI HEALTHCARE DIAGNOSTIC REPORT</h2>
-        <p><strong>Patient:</strong> ${currentUser ? currentUser.name : 'Guest'}</p>
-        <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
-        <h3>Symptoms:</h3>
-        <p>${document.getElementById('symptomText').value}</p>
-        <h3>Analysis Results:</h3>
-        ${document.getElementById('resultCard').innerHTML}
-    `;
-    
+    const printContent = `<h2>MedAI Report</h2><p>${document.getElementById('symptomText').value}</p>`;
     const printWindow = window.open('', '', 'height=500,width=800');
     if (printWindow) {
-        printWindow.document.write('<html><head><title>MedAI Report</title>');
-        printWindow.document.write('<link rel="stylesheet" href="style.css">');
-        printWindow.document.write('</head><body>');
-        printWindow.document.write(printContent);
-        printWindow.document.write('</body></html>');
+        printWindow.document.write(`<html><body>${printContent}</body></html>`);
         printWindow.document.close();
         printWindow.print();
     }
