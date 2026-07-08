@@ -1,5 +1,12 @@
-// API Configuration
-const API_URL = 'http://localhost:8000/api';
+// ============ API Configuration ============
+// Ye check karta hai ki website local chal rahi hai ya GitHub par
+const IS_PRODUCTION = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+
+// GitHub par daalne ke baad 'https://your-backend-app.onrender.com' jaisa URL yahan daalein
+const LIVE_BACKEND_URL = 'https://YOUR_LIVE_BACKEND_URL.com'; 
+const LOCAL_BACKEND_URL = 'http://localhost:8000'; // Agar backend 5000 par hai toh ise 5000 kar dein
+
+const API_URL = `${IS_PRODUCTION ? LIVE_BACKEND_URL : LOCAL_BACKEND_URL}/api`;
 
 // User State
 let currentUser = null;
@@ -15,14 +22,15 @@ document.addEventListener('DOMContentLoaded', () => {
 // Setup Event Listeners
 function setupEventListeners() {
     // Auth Forms
-    document.getElementById('loginForm').addEventListener('submit', handleLogin);
-    document.getElementById('signupForm').addEventListener('submit', handleSignup);
-    
-    // File Upload
-    document.getElementById('fileInput').addEventListener('change', handleFileUpload);
-    
-    // Voice Input
-    document.getElementById('voiceBtn').addEventListener('click', startVoiceInput);
+    const loginForm = document.getElementById('loginForm');
+    const signupForm = document.getElementById('signupForm');
+    const fileInput = document.getElementById('fileInput');
+    const voiceBtn = document.getElementById('voiceBtn');
+
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    if (signupForm) signupForm.addEventListener('submit', handleSignup);
+    if (fileInput) fileInput.addEventListener('change', handleFileUpload);
+    if (voiceBtn) voiceBtn.addEventListener('click', startVoiceInput);
 }
 
 // ============ AUTHENTICATION ============
@@ -43,10 +51,12 @@ function switchTab(tab) {
     
     if (tab === 'login') {
         document.getElementById('loginForm').classList.add('active');
-        document.querySelector('[onclick="switchTab(\'login\')"]').classList.add('active');
+        const loginTab = document.querySelector('[onclick="switchTab(\'login\')"]');
+        if (loginTab) loginTab.classList.add('active');
     } else {
         document.getElementById('signupForm').classList.add('active');
-        document.querySelector('[onclick="switchTab(\'signup\')"]').classList.add('active');
+        const signupTab = document.querySelector('[onclick="switchTab(\'signup\')"]');
+        if (signupTab) signupTab.classList.add('active');
     }
 }
 
@@ -55,6 +65,7 @@ async function handleLogin(e) {
     
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
+    const errorEl = document.getElementById('loginError');
     
     try {
         const response = await fetch(`${API_URL}/auth/login`, {
@@ -71,10 +82,10 @@ async function handleLogin(e) {
             currentUser = data.user;
             showMainContent();
         } else {
-            document.getElementById('loginError').textContent = data.message || 'Login failed';
+            if (errorEl) errorEl.textContent = data.message || 'Login failed';
         }
     } catch (error) {
-        document.getElementById('loginError').textContent = 'Connection error. Make sure backend is running.';
+        if (errorEl) errorEl.textContent = `Connection error. Make sure backend is running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}.`;
     }
 }
 
@@ -85,6 +96,7 @@ async function handleSignup(e) {
     const email = document.getElementById('signupEmail').value;
     const password = document.getElementById('signupPassword').value;
     const phone = document.getElementById('signupPhone').value;
+    const errorEl = document.getElementById('signupError');
     
     try {
         const response = await fetch(`${API_URL}/auth/signup`, {
@@ -101,10 +113,10 @@ async function handleSignup(e) {
             currentUser = data.user;
             showMainContent();
         } else {
-            document.getElementById('signupError').textContent = data.message || 'Signup failed';
+            if (errorEl) errorEl.textContent = data.message || 'Signup failed';
         }
     } catch (error) {
-        document.getElementById('signupError').textContent = 'Connection error. Make sure backend is running.';
+        if (errorEl) errorEl.textContent = `Connection error. Make sure backend is running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}.`;
     }
 }
 
@@ -232,7 +244,7 @@ async function analyzeSymptoms() {
         }
     } catch (error) {
         document.getElementById('resultCard').innerHTML = 
-            '<div class="error"><p>Connection error. Make sure backend is running on localhost:5000</p></div>';
+            `<div class="error"><p>Connection error. Make sure backend is running on ${IS_PRODUCTION ? 'Cloud' : 'localhost'}</p></div>`;
     }
 }
 
@@ -287,9 +299,7 @@ function startVoiceInput() {
     if (!recognition) {
         recognition = new SpeechRecognition();
         
-        // Settings: Isko true rakhein taaki aap lamba bol sakein
         recognition.continuous = true; 
-        // Interim ko true hi rakhenge taaki live type hota dikhe, par handle dhang se karenge
         recognition.interimResults = true; 
         
         recognition.onstart = () => {
@@ -300,19 +310,14 @@ function startVoiceInput() {
         
         recognition.onresult = (event) => {
             let finalTranscript = '';
-            let interimTranscript = '';
             
-            // Loop jo final aur temporary words ko alag karega
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 let transcript = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
                     finalTranscript += transcript + ' ';
-                } else {
-                    interimTranscript += transcript;
                 }
             }
             
-            // Agar koi final (pka) result aaya hai, sirf tabhi textarea mein badlaav karein
             if (finalTranscript !== '') {
                 document.getElementById('symptomText').value += finalTranscript;
             }
@@ -320,7 +325,7 @@ function startVoiceInput() {
         
         recognition.onend = () => {
             isListening = false;
-            document.getElementById('voiceBtn').style.background = 'var(--secondary-color)';
+            document.getElementById('voiceBtn').style.background = 'var(--secondary-color, #3498db)';
             document.getElementById('voiceStatus').textContent = '✓ Done';
         };
     }
@@ -331,6 +336,7 @@ function startVoiceInput() {
         recognition.start();
     }
 }
+
 // ============ HISTORY ============
 
 async function loadAnalysisHistory() {
@@ -355,25 +361,29 @@ async function loadAnalysisHistory() {
 
 function displayAnalysisHistory() {
     const historyList = document.getElementById('historyList');
+    if (!historyList) return;
     
     if (analysisHistory.length === 0) {
         historyList.innerHTML = '<p class="empty-state">No analysis history yet. Start your first analysis!</p>';
         return;
     }
     
-    historyList.innerHTML = analysisHistory.map((analysis, index) => `
-        <div class="history-item">
-            <div class="history-item-info">
-                <h3>Analysis #${analysisHistory.length - index}</h3>
-                <p>${new Date(analysis.timestamp).toLocaleString()}</p>
-                <p>Symptoms: ${analysis.symptoms.substring(0, 50)}...</p>
+    historyList.innerHTML = analysisHistory.map((analysis, index) => {
+        const symptomsSnippet = analysis.symptoms ? analysis.symptoms.substring(0, 50) : 'No symptoms listed';
+        return `
+            <div class="history-item">
+                <div class="history-item-info">
+                    <h3>Analysis #${analysisHistory.length - index}</h3>
+                    <p>${new Date(analysis.timestamp).toLocaleString()}</p>
+                    <p>Symptoms: ${symptomsSnippet}...</p>
+                </div>
+                <div class="history-item-actions">
+                    <button onclick="viewAnalysis(${index})">View</button>
+                    <button onclick="deleteAnalysis(${index})" style="background: #e74c3c;">Delete</button>
+                </div>
             </div>
-            <div class="history-item-actions">
-                <button onclick="viewAnalysis(${index})">View</button>
-                <button onclick="deleteAnalysis(${index})" style="background: #e74c3c;">Delete</button>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function viewAnalysis(index) {
@@ -401,14 +411,14 @@ function downloadReport() {
     let content = `MEDAI HEALTHCARE DIAGNOSTIC REPORT
 =====================================
 
-Patient Name: ${currentUser.name}
+Patient Name: ${currentUser ? currentUser.name : 'Guest'}
 Date: ${new Date().toLocaleString()}
 
 SYMPTOMS:
 ${symptomText}
 
 ANALYSIS RESULTS:
-${resultCard.innerText}
+${resultCard ? resultCard.innerText : 'No results found'}
 
 IMPORTANT DISCLAIMER:
 This analysis is for informational purposes only and should not replace 
@@ -428,7 +438,7 @@ Generated by MedAI Diagnostic System`;
 function printReport() {
     const printContent = `
         <h2>MEDAI HEALTHCARE DIAGNOSTIC REPORT</h2>
-        <p><strong>Patient:</strong> ${currentUser.name}</p>
+        <p><strong>Patient:</strong> ${currentUser ? currentUser.name : 'Guest'}</p>
         <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
         <h3>Symptoms:</h3>
         <p>${document.getElementById('symptomText').value}</p>
@@ -437,11 +447,13 @@ function printReport() {
     `;
     
     const printWindow = window.open('', '', 'height=500,width=800');
-    printWindow.document.write('<html><head><title>MedAI Report</title>');
-    printWindow.document.write('<link rel="stylesheet" href="style.css">');
-    printWindow.document.write('</head><body>');
-    printWindow.document.write(printContent);
-    printWindow.document.write('</body></html>');
-    printWindow.document.close();
-    printWindow.print();
+    if (printWindow) {
+        printWindow.document.write('<html><head><title>MedAI Report</title>');
+        printWindow.document.write('<link rel="stylesheet" href="style.css">');
+        printWindow.document.write('</head><body>');
+        printWindow.document.write(printContent);
+        printWindow.document.write('</body></html>');
+        printWindow.document.close();
+        printWindow.print();
+    }
 }
