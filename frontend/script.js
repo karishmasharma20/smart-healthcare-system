@@ -1,12 +1,11 @@
 // ============ API Configuration ============
 const IS_PRODUCTION = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
-// JAB APNA BACKEND RENDER PAR DEPLOY KAR LENGE, TOH USKA LINK YAHAN DALNA
-const LIVE_BACKEND_URL = 'https://medai-backend-production.onrender.com'; 
+// Yahan apna naya Render URL daal dijiye:
+const LIVE_BACKEND_URL = 'https://smart-healthcare-system-l51w.onrender.com'; 
 const LOCAL_BACKEND_URL = 'http://localhost:8000'; 
 
 const API_URL = `${IS_PRODUCTION ? LIVE_BACKEND_URL : LOCAL_BACKEND_URL}/api`;
-
 // User State
 let currentUser = null;
 let analysisHistory = [];
